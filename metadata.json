@@ -1,0 +1,8 @@
+{
+  "name": "FitTrack BMI & VCR 30-Min Run",
+  "description": "แอปพลิเคชันสุขภาพและออกกำลังกาย: คำนวณ BMI วิเคราะห์เกณฑ์สุขภาพ และระบบติดตามบันทึกการวิ่ง VCR 30 นาที คำนวณระยะทางและแคลอรี",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
