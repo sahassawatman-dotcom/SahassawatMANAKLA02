@@ -33,6 +33,27 @@ export interface GpsCoordinate {
   speed?: number | null;
 }
 
+export type WatchBrand = 'apple' | 'garmin' | 'samsung' | 'polar' | 'fitbit' | 'generic';
+
+export interface ConnectedWatch {
+  id: string;
+  name: string;
+  brand: WatchBrand;
+  connectedAt: string;
+  heartRate: number; // BPM
+  batteryPercent?: number;
+  isSimulated?: boolean;
+}
+
+export interface HeartRateZone {
+  zone: number;
+  label: string;
+  minBpm: number;
+  maxBpm: number;
+  color: string;
+  description: string;
+}
+
 export interface RunRecord {
   id: string;
   date: string; // ISO string
@@ -46,6 +67,10 @@ export interface RunRecord {
   notes?: string;
   path?: { x: number; y: number }[]; // Normalized or simplified route
   mode: 'gps' | 'indoor' | 'simulated';
+  averageHeartRate?: number;
+  maxHeartRate?: number;
+  watchSource?: string; // e.g. 'Apple Watch Ultra', 'Garmin Forerunner', etc.
 }
 
 export type RunStatus = 'idle' | 'running' | 'paused' | 'completed';
+

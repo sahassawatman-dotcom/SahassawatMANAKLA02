@@ -17,7 +17,7 @@ import {
   VolumeX,
   Compass,
 } from 'lucide-react';
-import { UserProfile, RunRecord, RunStatus, GpsCoordinate } from '../types';
+import { UserProfile, RunRecord, RunStatus, GpsCoordinate, ConnectedWatch } from '../types';
 import {
   calculateHaversineDistanceKm,
   calculateCaloriesBurned,
@@ -25,12 +25,16 @@ import {
   formatDuration,
   formatPace,
 } from '../utils/runCalculator';
+import { getHeartRateZones, getCurrentZone } from '../utils/bleHeartRate';
 import { soundEffects } from '../utils/soundEffects';
+import { Watch, Heart } from 'lucide-react';
 
 interface VcrTrackerProps {
   profile: UserProfile;
   onSaveRun: (record: RunRecord) => void;
   onNavigateToHistory: () => void;
+  connectedWatch?: ConnectedWatch | null;
+  onOpenWatchModal?: () => void;
 }
 
 const TARGET_DURATION_SECONDS = 30 * 60; // 30 minutes = 1800 seconds
@@ -39,11 +43,16 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
   profile,
   onSaveRun,
   onNavigateToHistory,
+  connectedWatch,
+  onOpenWatchModal,
 }) => {
   const [status, setStatus] = useState<RunStatus>('idle');
   const [durationSeconds, setDurationSeconds] = useState<number>(0);
   const [distanceKm, setDistanceKm] = useState<number>(0);
   const [currentSpeedKmh, setCurrentSpeedKmh] = useState<number>(0);
+  const [liveHeartRate, setLiveHeartRate] = useState<number>(connectedWatch?.heartRate || 75);
+  const heartRateRecordsRef = useRef<number[]>([]);
+
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [trackingMode, setTrackingMode] = useState<'gps' | 'indoor'>('indoor'); // Default indoor/simulator so user can test immediately anywhere
   const [simulatedSpeedKmh, setSimulatedSpeedKmh] = useState<number>(9.5); // Default running speed ~6:18 min/km
@@ -99,6 +108,17 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
     };
   }, []);
 
+  // Heart rate zones based on profile age
+  const hrZones = getHeartRateZones(profile.age || 28);
+  const currentHrZone = getCurrentZone(liveHeartRate, hrZones);
+
+  // Sync initial heart rate when watch connects
+  useEffect(() => {
+    if (connectedWatch?.heartRate) {
+      setLiveHeartRate(connectedWatch.heartRate);
+    }
+  }, [connectedWatch]);
+
   // Timer runner
   useEffect(() => {
     if (status === 'running') {
@@ -113,6 +133,19 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
           setCurrentSpeedKmh(Math.round(speedVariation * 10) / 10);
           setDistanceKm((prev) => prev + speedVariation / 3600);
         }
+
+        // Heart rate dynamics
+        if (connectedWatch) {
+          // Simulate slight cardio drift as run continues
+          setLiveHeartRate((prev) => {
+            const baseTarget = 125 + (simulatedSpeedKmh - 6) * 7;
+            const target = Math.min(185, Math.max(90, baseTarget));
+            const diff = target - prev;
+            const next = Math.round(prev + diff * 0.08 + (Math.random() * 2 - 1));
+            heartRateRecordsRef.current.push(next);
+            return next;
+          });
+        }
       }, 1000);
     } else {
       if (timerIntervalRef.current) {
@@ -124,7 +157,7 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
-  }, [status, trackingMode, simulatedSpeedKmh]);
+  }, [status, trackingMode, simulatedSpeedKmh, connectedWatch]);
 
   // GPS Watcher
   const startGpsWatch = () => {
@@ -244,6 +277,10 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
     const avgSpeed = durationSeconds > 0 ? (distanceKm / (durationSeconds / 3600)) : 0;
     const finalPace = calculatePace(durationSeconds, distanceKm);
 
+    const hrValues = heartRateRecordsRef.current;
+    const avgHr = hrValues.length > 0 ? Math.round(hrValues.reduce((a, b) => a + b, 0) / hrValues.length) : (connectedWatch ? liveHeartRate : undefined);
+    const maxHr = hrValues.length > 0 ? Math.max(...hrValues) : (connectedWatch ? liveHeartRate : undefined);
+
     const record: RunRecord = {
       id: `run-${Date.now()}`,
       date: new Date().toISOString(),
@@ -256,6 +293,9 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
       completedTarget30Min: durationSeconds >= TARGET_DURATION_SECONDS,
       notes: runNotes.trim() || undefined,
       mode: trackingMode,
+      averageHeartRate: avgHr,
+      maxHeartRate: maxHr,
+      watchSource: connectedWatch?.name,
     };
 
     onSaveRun(record);
@@ -269,6 +309,7 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
     setCurrentSpeedKmh(0);
     setHasCelebrated30Min(false);
     setRunNotes('');
+    heartRateRecordsRef.current = [];
 
     // Switch to history
     onNavigateToHistory();
@@ -298,6 +339,27 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-center">
+            {onOpenWatchModal && (
+              <button
+                type="button"
+                onClick={onOpenWatchModal}
+                className={`px-3 py-2 rounded-2xl backdrop-blur-md text-xs font-bold flex items-center gap-1.5 transition shadow-sm ${
+                  connectedWatch
+                    ? 'bg-rose-500 hover:bg-rose-600 text-white'
+                    : 'bg-white/20 hover:bg-white/30 text-white'
+                }`}
+              >
+                <Watch className="w-4 h-4" />
+                <span>{connectedWatch ? connectedWatch.name : 'ซิงค์ Apple Watch / นาฬิกา'}</span>
+                {connectedWatch && (
+                  <span className="flex items-center gap-0.5 text-rose-200">
+                    <Heart className="w-3 h-3 fill-white animate-pulse" />
+                    {liveHeartRate}
+                  </span>
+                )}
+              </button>
+            )}
+
             {/* Audio Toggle */}
             <button
               type="button"
@@ -499,6 +561,61 @@ export const VcrTracker: React.FC<VcrTrackerProps> = ({
                 <span className="text-[11px] font-bold text-slate-400">กม./ชม. (km/h)</span>
               </div>
             </div>
+
+            {/* Heart Rate & Watch Status Banner */}
+            {connectedWatch ? (
+              <div className="bg-rose-50/70 dark:bg-rose-950/30 p-4 rounded-2xl border border-rose-200 dark:border-rose-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-rose-500/25">
+                    <Heart className="w-5 h-5 fill-white animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-slate-900 dark:text-white text-base">
+                        {liveHeartRate} <span className="text-xs font-normal text-slate-400">BPM</span>
+                      </span>
+                      {currentHrZone && (
+                        <span
+                          className="text-[10px] font-extrabold px-2 py-0.5 rounded-full text-white"
+                          style={{ backgroundColor: currentHrZone.color }}
+                        >
+                          Zone {currentHrZone.zone}: {currentHrZone.label.split(':')[1]?.trim() || currentHrZone.label}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {connectedWatch.name} • {currentHrZone?.description || 'อัตราการเต้นของหัวใจแบบเรียลไทม์'}
+                    </p>
+                  </div>
+                </div>
+
+                {onOpenWatchModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenWatchModal}
+                    className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline"
+                  >
+                    ตั้งค่านาฬิกา
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-500">
+                <div className="flex items-center gap-2">
+                  <Watch className="w-4 h-4 text-slate-400" />
+                  <span>ต้องการวัดชีพจรเรียลไทม์? เชื่อมต่อ Apple Watch, Garmin หรือ BLE</span>
+                </div>
+                {onOpenWatchModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenWatchModal}
+                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold text-[11px] hover:bg-slate-100 transition shadow-sm"
+                  >
+                    เชื่อมต่อนาฬิกา
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* VCR Index Card */}
             <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-950/20 dark:to-blue-950/20 p-4 rounded-2xl border border-cyan-200/60 dark:border-cyan-800/40 text-xs text-slate-700 dark:text-slate-300">

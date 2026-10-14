@@ -4,7 +4,8 @@ import { BmiCalculator } from './components/BmiCalculator';
 import { VcrTracker } from './components/VcrTracker';
 import { RunHistory } from './components/RunHistory';
 import { CodeExporter } from './components/CodeExporter';
-import { UserProfile, RunRecord } from './types';
+import { UserProfile, RunRecord, ConnectedWatch } from './types';
+import { WatchSyncModal } from './components/WatchSyncModal';
 import {
   getSavedProfile,
   saveProfile,
@@ -28,6 +29,10 @@ export default function App() {
   const [runs, setRuns] = useState<RunRecord[]>(getSavedRuns());
   const [isMobileFrame, setIsMobileFrame] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<string>('09:41');
+
+  // Smartwatch state
+  const [isWatchModalOpen, setIsWatchModalOpen] = useState<boolean>(false);
+  const [connectedWatch, setConnectedWatch] = useState<ConnectedWatch | null>(null);
 
   // Clock for mobile status bar
   useEffect(() => {
@@ -83,6 +88,8 @@ export default function App() {
             profile={profile}
             onSaveRun={handleSaveRun}
             onNavigateToHistory={() => setActiveTab('history')}
+            connectedWatch={connectedWatch}
+            onOpenWatchModal={() => setIsWatchModalOpen(true)}
           />
         );
       case 'history':
@@ -101,6 +108,11 @@ export default function App() {
     }
   };
 
+  const handleImportRun = (newRecord: RunRecord) => {
+    const updated = saveRunRecord(newRecord);
+    setRuns(updated);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       <Navbar
@@ -108,6 +120,19 @@ export default function App() {
         onTabChange={setActiveTab}
         isMobileFrame={isMobileFrame}
         onToggleMobileFrame={() => setIsMobileFrame(!isMobileFrame)}
+        connectedWatch={connectedWatch}
+        onOpenWatchModal={() => setIsWatchModalOpen(true)}
+      />
+
+      {/* Watch Sync Hub Modal */}
+      <WatchSyncModal
+        isOpen={isWatchModalOpen}
+        onClose={() => setIsWatchModalOpen(false)}
+        connectedWatch={connectedWatch}
+        onConnectWatch={(watch) => setConnectedWatch(watch)}
+        onDisconnectWatch={() => setConnectedWatch(null)}
+        onImportRun={handleImportRun}
+        profile={profile}
       />
 
       <main className="flex-1 flex flex-col items-center justify-start py-6 px-3 sm:px-6">

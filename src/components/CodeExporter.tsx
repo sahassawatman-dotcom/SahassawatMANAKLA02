@@ -475,10 +475,93 @@ class _VcrTrackerScreenState extends State<VcrTrackerScreen> {
   }
 }`,
     },
+    watch_sync: {
+      filename: 'watch_sync_service.dart',
+      path: 'lib/services/watch_sync_service.dart',
+      desc: 'ระบบเชื่อมต่อ Apple Watch (Apple HealthKit), Garmin และ Bluetooth LE สำหรับวัดอัตราเต้นหัวใจสด',
+      code: `import 'package:health/health.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+
+class WatchSyncService {
+  final Health _health = Health();
+
+  // ขอสิทธิ์เข้าถึง Apple Health (Apple Watch) และ Health Connect (Android / Galaxy Watch)
+  Future<bool> requestWatchPermissions() async {
+    final types = [
+      HealthDataType.HEART_RATE,
+      HealthDataType.WORKOUT,
+      HealthDataType.ACTIVE_ENERGY_BURNED,
+      HealthDataType.DISTANCE_WALKING_RUNNING,
+    ];
+
+    final permissions = [
+      HealthDataAccess.READ_WRITE,
+      HealthDataAccess.READ_WRITE,
+      HealthDataAccess.READ_WRITE,
+      HealthDataAccess.READ_WRITE,
+    ];
+
+    bool hasPermissions = await _health.hasPermissions(types, permissions: permissions) ?? false;
+    if (!hasPermissions) {
+      try {
+        hasPermissions = await _health.requestAuthorization(types, permissions: permissions);
+      } catch (error) {
+        print("Exception in requestAuthorization: \$error");
+      }
+    }
+    return hasPermissions;
+  }
+
+  // ดึงอัตราการเต้นของหัวใจล่าสุดจาก Apple Watch
+  Future<int?> getLatestHeartRate() async {
+    final now = DateTime.now();
+    final fiveMinutesAgo = now.subtract(const Duration(minutes: 5));
+
+    List<HealthDataPoint> healthData = await _health.getHealthDataFromTypes(
+      startTime: fiveMinutesAgo,
+      endTime: now,
+      types: [HealthDataType.HEART_RATE],
+    );
+
+    if (healthData.isNotEmpty) {
+      final latest = healthData.last.value;
+      if (latest is NumericHealthValue) {
+        return latest.numericValue.round();
+      }
+    }
+    return null;
+  }
+
+  // เชื่อมต่อนาฬิกาผ่าน Bluetooth LE โดยตรง (Garmin Broadcast, Polar, etc.)
+  Stream<int> streamBleHeartRate(BluetoothDevice device) async* {
+    await device.connect();
+    List<BluetoothService> services = await device.discoverServices();
+    
+    // Heart Rate Service UUID: 0x180D
+    for (var service in services) {
+      if (service.uuid.toString().toUpperCase().contains("180D")) {
+        for (var char in service.characteristics) {
+          // Heart Rate Measurement Characteristic UUID: 0x2A37
+          if (char.uuid.toString().toUpperCase().contains("2A37")) {
+            await char.setNotifyValue(true);
+            yield* char.onValueReceived.map((data) {
+              if (data.isEmpty) return 0;
+              final is16Bit = (data[0] & 0x01) != 0;
+              return is16Bit && data.length > 2
+                  ? data[1] + (data[2] << 8)
+                  : (data.length > 1 ? data[1] : 0);
+            });
+          }
+        }
+      }
+    }
+  }
+}`,
+    },
     pubspec: {
       filename: 'pubspec.yaml',
       path: 'pubspec.yaml',
-      desc: 'ไฟล์ระบุ Dependency ของ Flutter (shared_preferences, geolocator)',
+      desc: 'ไฟล์ระบุ Dependency ของ Flutter (shared_preferences, geolocator, health, flutter_blue_plus)',
       code: `name: fittrack_vcr_app
 description: "A cross-platform BMI & VCR 30-Minute Run Tracker App"
 publish_to: 'none'
@@ -492,6 +575,8 @@ dependencies:
     sdk: flutter
   shared_preferences: ^2.2.2  # สำหรับ Local Storage ในเครื่อง
   geolocator: ^10.1.0         # สำหรับ GPS พื้นฐาน (iOS/Android)
+  health: ^10.2.0             # สำหรับ Apple Watch (HealthKit) & Google Health Connect
+  flutter_blue_plus: ^1.31.0  # สำหรับ Bluetooth LE (Garmin, Polar, Smartwatches)
   intl: ^0.19.0
 
 dev_dependencies:
@@ -768,10 +853,89 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 });`,
     },
+    watch_sync: {
+      filename: 'WatchSyncService.ts',
+      path: 'services/WatchSyncService.ts',
+      desc: 'ระบบเชื่อมต่อ Apple HealthKit & Apple Watch สำหรับ React Native',
+      code: `import AppleHealthKit, {
+  HealthKitPermissions,
+} from 'react-native-health';
+
+const permissions: HealthKitPermissions = {
+  permissions: {
+    read: [
+      AppleHealthKit.Constants.Permissions.HeartRate,
+      AppleHealthKit.Constants.Permissions.Workout,
+      AppleHealthKit.Constants.Permissions.DistanceWalkingRunning,
+      AppleHealthKit.Constants.Permissions.ActiveEnergyBurned,
+    ],
+    write: [
+      AppleHealthKit.Constants.Permissions.Workout,
+    ],
+  },
+};
+
+export class WatchSyncService {
+  // ขอสิทธิ์ Apple HealthKit เพื่อเชื่อมต่อ Apple Watch
+  static initHealthKit(): Promise<boolean> {
+    return new Promise((resolve) => {
+      AppleHealthKit.initHealthKit(permissions, (error: string) => {
+        if (error) {
+          console.warn('[HealthKit] Error initializing:', error);
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      });
+    });
+  }
+
+  // ดึงอัตราเต้นหัวใจล่าสุดจาก Apple Watch
+  static getLatestHeartRate(): Promise<number | null> {
+    return new Promise((resolve) => {
+      const options = {
+        unit: 'bpm',
+        startDate: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+        limit: 1,
+        ascending: false,
+      };
+
+      AppleHealthKit.getHeartRateSamples(options, (err: string, results: Array<any>) => {
+        if (err || !results || results.length === 0) {
+          resolve(null);
+          return;
+        }
+        resolve(Math.round(results[0].value));
+      });
+    });
+  }
+
+  // บันทึก Workout VCR 30 นาทีกลับไปยัง Apple Health / Workout App
+  static saveVcrWorkoutToAppleWatch(durationSeconds: number, distanceKm: number, calories: number) {
+    const options = {
+      type: 'Running',
+      startDate: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+      endDate: new Date().toISOString(),
+      energyBurned: calories,
+      energyBurnedUnit: 'calorie',
+      distance: distanceKm * 1000,
+      distanceUnit: 'meter',
+    };
+
+    AppleHealthKit.saveWorkout(options, (err: string, result: any) => {
+      if (err) {
+        console.warn('Error saving workout to Apple Health:', err);
+      } else {
+        console.log('VCR Workout saved to Apple Health successfully!');
+      }
+    });
+  }
+}`,
+    },
     pkg: {
       filename: 'package.json',
       path: 'package.json',
-      desc: 'Dependencies สำหรับ Expo / React Native',
+      desc: 'Dependencies สำหรับ Expo / React Native พร้อม Apple HealthKit',
       code: `{
   "name": "fittrack-react-native",
   "version": "1.0.0",
@@ -788,7 +952,8 @@ const styles = StyleSheet.create({
     "@react-navigation/native": "^6.1.9",
     "@react-navigation/bottom-tabs": "^6.5.11",
     "@react-native-async-storage/async-storage": "1.21.0",
-    "expo-location": "~16.5.5"
+    "expo-location": "~16.5.5",
+    "react-native-health": "^1.18.0"
   }
 }`,
     },

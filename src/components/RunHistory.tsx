@@ -250,6 +250,16 @@ export const RunHistory: React.FC<RunHistoryProps> = ({
                       <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
                         {run.mode === 'gps' ? 'โหมด GPS จริง' : 'โหมดในร่ม / ลู่วิ่ง'}
                       </span>
+                      {run.averageHeartRate && (
+                        <span className="flex items-center gap-1 font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md">
+                          ❤️ {run.averageHeartRate} BPM
+                        </span>
+                      )}
+                      {run.watchSource && (
+                        <span className="flex items-center gap-1 font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                          ⌚ {run.watchSource}
+                        </span>
+                      )}
                       {run.notes && (
                         <span className="italic text-slate-400 truncate max-w-xs">
                           "{run.notes}"
@@ -400,6 +410,27 @@ export const RunHistory: React.FC<RunHistoryProps> = ({
                   {selectedRun.averageSpeedKmh.toFixed(1)} km/h
                 </span>
               </div>
+
+              {selectedRun.averageHeartRate && (
+                <div className="bg-slate-50 dark:bg-slate-800 p-3.5 rounded-2xl col-span-2 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-slate-400 block font-medium">อัตราการเต้นของหัวใจ</span>
+                    <span className="text-xl font-black text-rose-500 flex items-center gap-1.5 mt-0.5">
+                      ❤️ เฉลี่ย {selectedRun.averageHeartRate} BPM
+                      {selectedRun.maxHeartRate && (
+                        <span className="text-xs font-normal text-slate-400">
+                          (สูงสุด {selectedRun.maxHeartRate} BPM)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {selectedRun.watchSource && (
+                    <span className="text-xs font-bold text-slate-500 bg-slate-200 dark:bg-slate-700 px-2.5 py-1 rounded-xl">
+                      ⌚ {selectedRun.watchSource}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Notes */}
